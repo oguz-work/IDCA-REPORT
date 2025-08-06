@@ -1,0 +1,11 @@
+MITRE ID,Rule Name,Severity
+T1566.001,Phishing Email with Malicious Attachment Detected,High
+T1059.001,PowerShell Execution with Suspicious Arguments,Critical
+T1003.001,LSASS Memory Dump Attempt,Critical
+T1053.005,Scheduled Task Creation for Persistence,Medium
+T1055.001,Process Injection via SetWindowsHookEx,High
+T1070.001,Windows Event Log Cleared,High
+T1087.001,Local Account Discovery via Net Commands,Low
+T1083,File and Directory Discovery Activity,Low
+T1021.001,RDP Brute Force Attempt Detected,High
+T1071.001,HTTP/HTTPS C2 Communication Pattern,Medium

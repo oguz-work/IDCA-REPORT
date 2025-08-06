@@ -11,9 +11,9 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
-from ..data.models import IDCAData
-from ..themes.theme_manager import ThemeManager
-from ..core.config import (
+from data.models import IDCAData
+from themes.theme_manager import ThemeManager
+from core.config import (
     DEFAULT_FIG_WIDTH, DEFAULT_FIG_HEIGHT, DEFAULT_DPI,
     TABLE_HEADER_HEIGHT, TABLE_ROW_HEIGHT, STATUS_ICONS
 )

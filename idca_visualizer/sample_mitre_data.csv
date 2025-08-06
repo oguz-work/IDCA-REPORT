@@ -1,0 +1,13 @@
+Tactic Name,Test Count,Triggered Count
+Initial Access,25,20
+Execution,30,28
+Persistence,20,15
+Privilege Escalation,15,10
+Defense Evasion,35,30
+Credential Access,18,12
+Discovery,22,18
+Lateral Movement,12,8
+Collection,25,22
+Command and Control,20,16
+Exfiltration,10,5
+Impact,8,4
