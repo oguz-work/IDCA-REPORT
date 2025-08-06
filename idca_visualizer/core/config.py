@@ -121,6 +121,15 @@ STATUS_ICONS = {
     'pending': '🔄'
 }
 
+# Status colors
+STATUS_COLORS = {
+    'success': '#43a047',
+    'warning': '#fb8c00',
+    'error': '#e53935',
+    'info': '#1e88e5',
+    'pending': '#757575'
+}
+
 # File formats
 SUPPORTED_IMAGE_FORMATS = ['.png', '.jpg', '.svg', '.pdf']
 EXPORT_FORMAT = '.png'
