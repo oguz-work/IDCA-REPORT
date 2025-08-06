@@ -29,8 +29,10 @@ from data.models import (
     TriggeredRule, UndetectedTechnique, Recommendation
 )
 from ui.widgets import ValidatedEntry, EnhancedTable, CollapsibleFrame, StatusBar
+from ui.enhanced_widgets import MITRETable, AutoCompleteCombobox, NumericEntry
 from utils.validators import InputValidator, CrossFieldValidator
 from core.visualizations import VisualizationGenerator
+from utils.csv_handler import CSVHandler, CSVMappingDialog
 
 
 class IDCAVisualizerApp:
@@ -143,7 +145,9 @@ class IDCAVisualizerApp:
         buttons = [
             ("📖 Guide", self._show_guide, None),
             ("📁 Load", self._load_data, None),
+            ("📥 Import CSV", self._import_csv, None),
             ("💾 Save", self._save_data, None),
+            ("📤 Export CSV", self._export_csv, None),
             ("📊 Sample Data", self._load_sample_data, None),
             ("🎨 GENERATE VISUALS", self._generate_all_visuals, 'Success.TButton'),
             ("🔄 Refresh", self._refresh_preview, None),
@@ -346,22 +350,12 @@ class IDCAVisualizerApp:
         table_frame = ttk.LabelFrame(main_frame, text="MITRE Tactics", padding=10)
         table_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create enhanced table
-        columns = ['Tactic Name', 'Tested', 'Triggered', 'Success %']
-        self.mitre_table = EnhancedTable(table_frame, columns, rows=0,
-                                        column_widths=[25, 12, 12, 12])
+        # Create enhanced MITRE table
+        self.mitre_table = MITRETable(table_frame, MITRE_TACTICS)
         self.mitre_table.pack(fill=tk.BOTH, expand=True)
         
-        # Add default tactics
-        for tactic in MITRE_TACTICS:
-            self.mitre_table.add_row([tactic, '', '', ''])
-        
-        # Make tactic names read-only and bind calculation
-        for i, row in enumerate(self.mitre_table.entries):
-            row[0].config(state='readonly')
-            row[1].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-            row[2].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-            row[3].config(state='readonly')
+        # Set callback for automatic calculation
+        self.mitre_table.set_on_change_callback(self._update_data_status)
     
     def _create_rules_tab(self):
         """Create rules tab"""
@@ -598,38 +592,8 @@ class IDCAVisualizerApp:
             pass
     
     def _calculate_mitre_rates(self):
-        """Calculate MITRE success rates"""
-        for row in self.mitre_table.entries:
-            try:
-                test = int(row[1].get() or 0)
-                triggered = int(row[2].get() or 0)
-                
-                is_valid, error = CrossFieldValidator.validate_mitre_tactic(test, triggered)
-                if not is_valid:
-                    row[3].delete(0, tk.END)
-                    row[3].insert(0, "Error")
-                    row[3].config(foreground='red')
-                    continue
-                
-                if test > 0:
-                    rate = (triggered / test) * 100
-                    row[3].delete(0, tk.END)
-                    row[3].insert(0, f"{rate:.1f}")
-                    
-                    # Color coding
-                    if rate >= 70:
-                        row[3].config(foreground='green')
-                    elif rate >= 40:
-                        row[3].config(foreground='orange')
-                    else:
-                        row[3].config(foreground='red')
-                else:
-                    row[3].delete(0, tk.END)
-                    row[3].insert(0, "0.0")
-                    row[3].config(foreground='gray')
-            except:
-                pass
-        
+        """Calculate MITRE success rates - handled automatically by MITRETable"""
+        # This is now handled automatically by the MITRETable widget
         self.status_bar.set_status("MITRE rates calculated", 'success')
     
     def _apply_theme(self):
@@ -788,16 +752,16 @@ class IDCAVisualizerApp:
         
         # MITRE tactics
         self.data.mitre_tactics.clear()
-        for row in self.mitre_table.get_data():
-            if len(row) >= 4 and row[0]:
+        for tactic_data in self.mitre_table.get_data():
+            if tactic_data['test_count'] > 0 or tactic_data['triggered_count'] > 0:
                 try:
                     tactic = MitreTactic(
-                        name=row[0],
-                        test_count=int(row[1] or 0),
-                        triggered_count=int(row[2] or 0)
+                        name=tactic_data['tactic'],
+                        test_count=tactic_data['test_count'],
+                        triggered_count=tactic_data['triggered_count']
                     )
                     tactic.calculate_success_rate()
-                    self.data.mitre_tactics[row[0]] = tactic
+                    self.data.mitre_tactics[tactic_data['tactic']] = tactic
                 except:
                     pass
         
@@ -1062,22 +1026,16 @@ Happy reporting! 🚀
         self._calculate_test_stats()
         
         # MITRE tactics
-        mitre_data = []
+        mitre_data = {}
         for tactic in MITRE_TACTICS:
             if tactic in self.data.mitre_tactics:
                 t = self.data.mitre_tactics[tactic]
-                mitre_data.append([tactic, str(t.test_count), str(t.triggered_count), f"{t.success_rate:.1f}"])
-            else:
-                mitre_data.append([tactic, '', '', ''])
+                mitre_data[tactic] = {
+                    'test_count': t.test_count,
+                    'triggered_count': t.triggered_count
+                }
         
         self.mitre_table.set_data(mitre_data)
-        
-        # Re-apply read-only and bindings
-        for i, row in enumerate(self.mitre_table.entries):
-            row[0].config(state='readonly')
-            row[1].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-            row[2].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-            row[3].config(state='readonly')
         
         # Triggered rules
         triggered_data = []
@@ -1147,6 +1105,107 @@ Happy reporting! 🚀
                 messagebox.showerror("Error", f"Failed to load data: {str(e)}")
                 self.status_bar.set_status("Load failed", 'error')
     
+    def _import_csv(self):
+        """Import data from CSV file(s)"""
+        filename = filedialog.askopenfilename(
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if filename:
+            try:
+                # Read CSV file
+                headers, csv_data = CSVHandler.read_csv(filename)
+                
+                if not csv_data:
+                    messagebox.showwarning("Warning", "CSV file is empty")
+                    return
+                
+                # Define available fields for mapping
+                target_fields = {
+                    'MITRE': ['Tactic Name', 'Test Count', 'Triggered Count'],
+                    'Rules': ['Rule Name', 'MITRE ID', 'Tactic', 'Confidence'],
+                    'Undetected': ['MITRE ID', 'Technique Name', 'Tactic', 'Criticality']
+                }
+                
+                # Show mapping dialog
+                dialog = CSVMappingDialog(self.root, headers, target_fields)
+                self.root.wait_window(dialog)
+                
+                if dialog.result:
+                    # Import based on mappings
+                    imported_count = 0
+                    
+                    # Import MITRE tactics
+                    mitre_tactics = CSVHandler.import_mitre_tactics(csv_data, dialog.result)
+                    if mitre_tactics:
+                        self.mitre_table.set_data(mitre_tactics)
+                        imported_count += len(mitre_tactics)
+                    
+                    # Import triggered rules
+                    triggered_rules = CSVHandler.import_triggered_rules(csv_data, dialog.result)
+                    if triggered_rules:
+                        self.triggered_table.clear()
+                        for rule in triggered_rules:
+                            self.triggered_table.add_row([
+                                rule['name'],
+                                rule['mitre_id'],
+                                rule['tactic'],
+                                str(rule['confidence'])
+                            ])
+                            imported_count += 1
+                    
+                    # Import undetected techniques
+                    undetected_techniques = CSVHandler.import_undetected_techniques(csv_data, dialog.result)
+                    if undetected_techniques:
+                        self.undetected_table.clear()
+                        for tech in undetected_techniques:
+                            self.undetected_table.add_row([
+                                tech['mitre_id'],
+                                tech['name'],
+                                tech['tactic'],
+                                tech['criticality']
+                            ])
+                            imported_count += 1
+                    
+                    # Calculate rates after import
+                    self._calculate_mitre_rates()
+                    
+                    messagebox.showinfo("Success", f"Imported {imported_count} items from CSV")
+                    self.status_bar.set_status(f"CSV import successful", 'success')
+                    self._update_data_status()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import CSV: {str(e)}")
+                self.status_bar.set_status("CSV import failed", 'error')
+    
+    def _export_csv(self):
+        """Export data to CSV file(s)"""
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if filename:
+            try:
+                # Collect current data
+                self._collect_form_data()
+                
+                # Export to CSV
+                export_data = {
+                    'mitre_tactics': self.data.mitre_tactics,
+                    'triggered_rules': [rule.to_dict() for rule in self.data.triggered_rules],
+                    'undetected_techniques': [tech.to_dict() for tech in self.data.undetected_techniques]
+                }
+                
+                CSVHandler.export_to_csv(export_data, filename)
+                
+                messagebox.showinfo("Success", "Data exported to CSV successfully!")
+                self.status_bar.set_status("CSV export successful", 'success')
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export CSV: {str(e)}")
+                self.status_bar.set_status("CSV export failed", 'error')
+    
     def _clear_all_data(self):
         """Clear all data after confirmation"""
         if messagebox.askyesno("Confirm Clear", 
@@ -1169,17 +1228,6 @@ Happy reporting! 🚀
             
             # Reset data
             self.data = IDCAData()
-            
-            # Re-add default MITRE tactics
-            for tactic in MITRE_TACTICS:
-                self.mitre_table.add_row([tactic, '', '', ''])
-            
-            # Re-apply settings
-            for i, row in enumerate(self.mitre_table.entries):
-                row[0].config(state='readonly')
-                row[1].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-                row[2].bind('<KeyRelease>', lambda e: self._calculate_mitre_rates())
-                row[3].config(state='readonly')
             
             self.status_bar.set_status("All data cleared", 'warning')
             self._update_data_status()
