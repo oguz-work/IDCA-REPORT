@@ -1,0 +1,23 @@
+# IDCA Security Assessment - Required Dependencies
+# ================================================
+
+# Core GUI Framework (usually included with Python)
+# tkinter>=8.6
+
+# Data visualization and plotting
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Data manipulation and analysis
+pandas>=1.3.0
+
+# Additional utilities
+# Note: tkinter is typically included with Python installations
+# If you encounter tkinter issues, install python3-tk on Linux systems:
+# sudo apt-get install python3-tk  # Ubuntu/Debian
+# sudo yum install tkinter         # RHEL/CentOS
+
+# Development dependencies (optional)
+# black>=22.0.0        # Code formatting
+# flake8>=4.0.0        # Code linting  
+# pytest>=7.0.0        # Testing framework
