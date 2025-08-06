@@ -667,3 +667,289 @@ class VisualizationGenerator:
                        facecolor=self.theme_manager.get_color('background'),
                        bbox_inches='tight', pad_inches=0.1)
         plt.close(fig)
+    
+    # API methods that return figures instead of saving them
+    def create_test_coverage_chart(self, data: IDCAData) -> plt.Figure:
+        """Create test coverage pie chart and return figure"""
+        fig, ax = self._setup_figure()
+        
+        # Data
+        total = data.test_results.total_rules
+        tested = data.test_results.tested_rules
+        not_tested = total - tested
+        
+        if total == 0:
+            ax.text(0.5, 0.5, 'No data available', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontsize=16, color=self.theme_manager.get_color('text_primary'))
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            return fig
+        
+        # Create pie chart
+        sizes = [tested, not_tested]
+        labels = ['Tested', 'Not Tested']
+        colors = [self.theme_manager.get_color('success'), 
+                 self.theme_manager.get_color('error')]
+        
+        wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors,
+                                          autopct='%1.1f%%', startangle=90,
+                                          textprops={'color': self.theme_manager.get_color('text_primary')})
+        
+        # Title
+        ax.set_title('Test Coverage Overview', fontsize=16, 
+                    color=self.theme_manager.get_color('text_primary'),
+                    pad=20)
+        
+        return fig
+    
+    def create_mitre_heatmap(self, data: IDCAData) -> plt.Figure:
+        """Create MITRE ATT&CK heatmap and return figure"""
+        fig, ax = self._setup_figure(figsize=(12, 8))
+        
+        # Get MITRE data
+        mitre_data = []
+        for tactic in data.mitre_tactics:
+            mitre_data.append({
+                'name': tactic.name,
+                'tested': tactic.tested_techniques,
+                'total': tactic.total_techniques
+            })
+        
+        if not mitre_data:
+            ax.text(0.5, 0.5, 'No MITRE data available', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontsize=16, color=self.theme_manager.get_color('text_primary'))
+            ax.axis('off')
+            return fig
+        
+        # Create heatmap data
+        tactics = [d['name'] for d in mitre_data]
+        coverage = [d['tested'] / d['total'] * 100 if d['total'] > 0 else 0 
+                   for d in mitre_data]
+        
+        # Create bar chart as heatmap
+        y_pos = np.arange(len(tactics))
+        bars = ax.barh(y_pos, coverage, color=self.theme_manager.get_color('primary'))
+        
+        # Color bars based on coverage
+        for i, (bar, cov) in enumerate(zip(bars, coverage)):
+            if cov >= 80:
+                bar.set_color(self.theme_manager.get_color('success'))
+            elif cov >= 50:
+                bar.set_color(self.theme_manager.get_color('warning'))
+            else:
+                bar.set_color(self.theme_manager.get_color('error'))
+        
+        # Customize
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(tactics)
+        ax.set_xlabel('Coverage %', fontsize=12)
+        ax.set_title('MITRE ATT&CK Coverage by Tactic', fontsize=16, pad=20)
+        ax.set_xlim(0, 100)
+        
+        # Add percentage labels
+        for i, (bar, cov) in enumerate(zip(bars, coverage)):
+            ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2, 
+                   f'{cov:.1f}%', va='center')
+        
+        # Apply theme colors
+        ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
+        ax.xaxis.label.set_color(self.theme_manager.get_color('text_primary'))
+        ax.title.set_color(self.theme_manager.get_color('text_primary'))
+        
+        plt.tight_layout()
+        return fig
+    
+    def create_severity_distribution(self, data: IDCAData) -> plt.Figure:
+        """Create severity distribution chart and return figure"""
+        fig, ax = self._setup_figure()
+        
+        # Count findings by severity
+        severity_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+        
+        for finding in data.findings:
+            if finding.severity in severity_counts:
+                severity_counts[finding.severity] += 1
+        
+        # Create bar chart
+        severities = list(severity_counts.keys())
+        counts = list(severity_counts.values())
+        colors = [self.theme_manager.get_color('error'),
+                 self.theme_manager.get_color('warning'),
+                 self.theme_manager.get_color('info'),
+                 self.theme_manager.get_color('success')]
+        
+        bars = ax.bar(severities, counts, color=colors)
+        
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{int(height)}', ha='center', va='bottom')
+        
+        # Customize
+        ax.set_ylabel('Number of Findings', fontsize=12)
+        ax.set_title('Findings by Severity', fontsize=16, pad=20)
+        
+        # Apply theme colors
+        ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
+        ax.yaxis.label.set_color(self.theme_manager.get_color('text_primary'))
+        ax.title.set_color(self.theme_manager.get_color('text_primary'))
+        
+        return fig
+    
+    def create_top_gaps_chart(self, data: IDCAData) -> plt.Figure:
+        """Create top security gaps chart and return figure"""
+        fig, ax = self._setup_figure(figsize=(10, 6))
+        
+        # Get failed tests
+        failed_tests = [test for test in data.test_results.tests 
+                       if test.status in ['Failed', 'Not Tested']]
+        
+        # Sort by severity (assuming we have severity info)
+        # For now, just take top 10
+        top_gaps = failed_tests[:10]
+        
+        if not top_gaps:
+            ax.text(0.5, 0.5, 'No security gaps identified', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   fontsize=16, color=self.theme_manager.get_color('text_primary'))
+            ax.axis('off')
+            return fig
+        
+        # Create horizontal bar chart
+        test_names = [test.test_id[:50] + '...' if len(test.test_id) > 50 
+                     else test.test_id for test in top_gaps]
+        y_pos = np.arange(len(test_names))
+        
+        # Use status to determine color
+        colors = [self.theme_manager.get_color('error') if test.status == 'Failed'
+                 else self.theme_manager.get_color('warning') 
+                 for test in top_gaps]
+        
+        ax.barh(y_pos, [1] * len(test_names), color=colors)
+        
+        # Customize
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(test_names, fontsize=10)
+        ax.set_xlabel('Status', fontsize=12)
+        ax.set_title('Top Security Gaps', fontsize=16, pad=20)
+        ax.set_xlim(0, 1.2)
+        
+        # Remove x-axis ticks
+        ax.set_xticks([])
+        
+        # Add status labels
+        for i, test in enumerate(top_gaps):
+            ax.text(1.05, i, test.status, va='center', fontsize=10,
+                   color=self.theme_manager.get_color('text_secondary'))
+        
+        # Apply theme colors
+        ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
+        ax.xaxis.label.set_color(self.theme_manager.get_color('text_primary'))
+        ax.title.set_color(self.theme_manager.get_color('text_primary'))
+        
+        plt.tight_layout()
+        return fig
+    
+    def create_summary_dashboard(self, data: IDCAData) -> plt.Figure:
+        """Create summary dashboard and return figure"""
+        fig = plt.figure(figsize=(12, 8))
+        fig.patch.set_facecolor(self.theme_manager.get_color('background'))
+        
+        # Create grid
+        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        
+        # Key metrics
+        ax1 = fig.add_subplot(gs[0, :])
+        ax1.axis('off')
+        
+        # Calculate metrics
+        total_tests = data.test_results.total_rules
+        passed_tests = data.test_results.passed_rules
+        coverage_pct = (passed_tests / total_tests * 100) if total_tests > 0 else 0
+        critical_findings = len([f for f in data.findings if f.severity == 'Critical'])
+        high_findings = len([f for f in data.findings if f.severity == 'High'])
+        
+        # Display metrics
+        metrics_text = f"""
+        Test Coverage: {coverage_pct:.1f}%    |    Total Tests: {total_tests}    |    
+        Passed: {passed_tests}    |    Critical Findings: {critical_findings}    |    
+        High Findings: {high_findings}
+        """
+        ax1.text(0.5, 0.5, metrics_text, transform=ax1.transAxes,
+                ha='center', va='center', fontsize=14,
+                bbox=dict(boxstyle="round,pad=0.3", 
+                         facecolor=self.theme_manager.get_color('surface'),
+                         edgecolor=self.theme_manager.get_color('border')))
+        
+        # Test coverage pie
+        ax2 = fig.add_subplot(gs[1, 0])
+        if total_tests > 0:
+            sizes = [passed_tests, total_tests - passed_tests]
+            colors = [self.theme_manager.get_color('success'), 
+                     self.theme_manager.get_color('error')]
+            ax2.pie(sizes, labels=['Passed', 'Failed'], colors=colors,
+                   autopct='%1.1f%%', startangle=90)
+            ax2.set_title('Test Results', fontsize=12)
+        else:
+            ax2.text(0.5, 0.5, 'No data', transform=ax2.transAxes,
+                    ha='center', va='center')
+            ax2.axis('off')
+        
+        # Severity distribution
+        ax3 = fig.add_subplot(gs[1, 1])
+        severity_counts = {'Critical': critical_findings, 
+                          'High': high_findings,
+                          'Medium': len([f for f in data.findings if f.severity == 'Medium']),
+                          'Low': len([f for f in data.findings if f.severity == 'Low'])}
+        
+        if sum(severity_counts.values()) > 0:
+            ax3.bar(severity_counts.keys(), severity_counts.values(),
+                   color=[self.theme_manager.get_color('error'),
+                         self.theme_manager.get_color('warning'),
+                         self.theme_manager.get_color('info'),
+                         self.theme_manager.get_color('success')])
+            ax3.set_title('Findings by Severity', fontsize=12)
+            ax3.set_ylabel('Count')
+        else:
+            ax3.text(0.5, 0.5, 'No findings', transform=ax3.transAxes,
+                    ha='center', va='center')
+            ax3.axis('off')
+        
+        # MITRE coverage summary
+        ax4 = fig.add_subplot(gs[1:, 2])
+        if data.mitre_tactics:
+            tactics = [t.name[:15] + '...' if len(t.name) > 15 else t.name 
+                      for t in data.mitre_tactics[:5]]
+            coverage = [t.tested_techniques / t.total_techniques * 100 
+                       if t.total_techniques > 0 else 0 
+                       for t in data.mitre_tactics[:5]]
+            
+            ax4.barh(tactics, coverage)
+            ax4.set_xlabel('Coverage %')
+            ax4.set_title('Top MITRE Tactics', fontsize=12)
+            ax4.set_xlim(0, 100)
+        else:
+            ax4.text(0.5, 0.5, 'No MITRE data', transform=ax4.transAxes,
+                    ha='center', va='center')
+            ax4.axis('off')
+        
+        # Overall title
+        fig.suptitle('Security Assessment Summary Dashboard', 
+                    fontsize=18, color=self.theme_manager.get_color('text_primary'))
+        
+        # Apply theme to all axes
+        for ax in [ax2, ax3, ax4]:
+            if ax.get_visible():
+                ax.set_facecolor(self.theme_manager.get_color('surface'))
+                ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
+                ax.title.set_color(self.theme_manager.get_color('text_primary'))
+                if hasattr(ax, 'xaxis') and ax.xaxis.label:
+                    ax.xaxis.label.set_color(self.theme_manager.get_color('text_primary'))
+                if hasattr(ax, 'yaxis') and ax.yaxis.label:
+                    ax.yaxis.label.set_color(self.theme_manager.get_color('text_primary'))
+        
+        return fig

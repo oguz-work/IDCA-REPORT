@@ -19,7 +19,7 @@ from data.models import IDCAData
 from core.config import STATUS_COLORS, STATUS_ICONS
 from utils.validators import InputValidator
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = 'idca-visualizer-secret-key'
 
 # Global data storage (in production, use proper database)
@@ -41,6 +41,8 @@ def handle_data():
     elif request.method == 'POST':
         try:
             data = request.get_json()
+            if data is None:
+                return jsonify({'status': 'error', 'message': 'No JSON data provided or invalid content-type'}), 400
             
             # Update general info
             if 'general' in data:
@@ -274,4 +276,6 @@ if __name__ == '__main__':
     templates_dir.mkdir(exist_ok=True)
     
     # Run the app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    import os
+    port = int(os.environ.get('FLASK_RUN_PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
