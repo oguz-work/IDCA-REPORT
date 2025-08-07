@@ -395,8 +395,18 @@ class IDCAVisualizerApp:
     
     def _add_criticality_dropdowns(self):
         """Add criticality dropdown to undetected techniques"""
-        # This will be called after table rows are created
-        pass
+        # Replace criticality entry in each row with a dropdown
+        for row_entries in self.undetected_table.entries:
+            if len(row_entries) >= 4 and row_entries[3].winfo_exists():
+                parent = row_entries[3].master
+                # Remove existing entry widget
+                row_entries[3].destroy()
+                # Create combobox
+                combo = ttk.Combobox(parent, values=CRITICALITY_LEVELS + CRITICALITY_LEVELS_TR, state='readonly', width=12)
+                combo.grid(row=0, column=3, sticky='ew', padx=2)
+                combo.set('Medium')
+                # Replace reference in entries list
+                row_entries[3] = combo
     
     def _create_recommendations_tab(self):
         """Create recommendations tab"""
@@ -492,6 +502,12 @@ class IDCAVisualizerApp:
         
         ttk.Button(output_content, text="📁 Browse",
                   command=self._select_output_dir).grid(row=0, column=2)
+        
+        # Export format
+        ttk.Label(output_content, text="Export Format:").grid(row=1, column=0, sticky='w', pady=(10,0))
+        self.export_format_var = tk.StringVar(value=EXPORT_FORMAT)
+        self.export_format_combo = ttk.Combobox(output_content, values=SUPPORTED_IMAGE_FORMATS, state='readonly', width=10, textvariable=self.export_format_var)
+        self.export_format_combo.grid(row=1, column=1, sticky='w', padx=10, pady=(10,0))
     
     def _create_theme_preview(self, parent):
         """Create theme color preview"""
@@ -1048,6 +1064,8 @@ Happy reporting! 🚀
         for tech in self.data.undetected_techniques:
             undetected_data.append([tech.mitre_id, tech.name, tech.tactic, tech.criticality])
         self.undetected_table.set_data(undetected_data)
+        # Ensure comboboxes exist for criticality after setting data
+        self._add_criticality_dropdowns()
         
         # Recommendations
         rec_data = []
@@ -1165,7 +1183,9 @@ Happy reporting! 🚀
                                 tech['tactic'],
                                 tech['criticality']
                             ])
-                            imported_count += 1
+                        # Re-apply dropdowns after populating rows
+                        self._add_criticality_dropdowns()
+                        imported_count += len(undetected_techniques)
                     
                     # Calculate rates after import
                     self._calculate_mitre_rates()
@@ -1188,11 +1208,15 @@ Happy reporting! 🚀
         if filename:
             try:
                 # Collect current data
-                self._collect_form_data()
+                self._collect_data()
                 
                 # Export to CSV
                 export_data = {
-                    'mitre_tactics': self.data.mitre_tactics,
+                    'mitre_tactics': {name: {
+                        'name': t.name,
+                        'test_count': t.test_count,
+                        'triggered_count': t.triggered_count
+                    } for name, t in self.data.mitre_tactics.items()},
                     'triggered_rules': [rule.to_dict() for rule in self.data.triggered_rules],
                     'undetected_techniques': [tech.to_dict() for tech in self.data.undetected_techniques]
                 }
@@ -1350,35 +1374,35 @@ Happy reporting! 🚀
             try:
                 # Generate individual visualization
                 if visual_name == 'Figure_1_Test_Coverage':
-                    filepath = self.output_dir / f"{visual_name}.png"
+                    filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                     self.visualization_generator.generate_figure1(self.data, filepath)
                 elif visual_name == 'Figure_2_Test_Status':
-                    filepath = self.output_dir / f"{visual_name}.png"
+                    filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                     self.visualization_generator.generate_figure2(self.data, filepath)
                 elif visual_name == 'Table_1_Summary':
-                    filepath = self.output_dir / f"{visual_name}.png"
+                    filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                     self.visualization_generator.generate_table1(self.data, filepath)
                 elif visual_name == 'Table_2_MITRE_Coverage':
                     if self.data.mitre_tactics:
-                        filepath = self.output_dir / f"{visual_name}.png"
+                        filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                         self.visualization_generator.generate_table2(self.data, filepath)
                     else:
                         raise Exception("No MITRE data")
                 elif visual_name == 'Table_3_Triggered_Rules':
                     if self.data.triggered_rules:
-                        filepath = self.output_dir / f"{visual_name}.png"
+                        filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                         self.visualization_generator.generate_table3(self.data, filepath)
                     else:
                         raise Exception("No triggered rules data")
                 elif visual_name == 'Table_4_Undetected_Techniques':
                     if self.data.undetected_techniques:
-                        filepath = self.output_dir / f"{visual_name}.png"
+                        filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                         self.visualization_generator.generate_table4(self.data, filepath)
                     else:
                         raise Exception("No undetected techniques data")
                 elif visual_name == 'Table_5_Recommendations':
                     if self.data.recommendations:
-                        filepath = self.output_dir / f"{visual_name}.png"
+                        filepath = self.output_dir / f"{visual_name}{self.export_format_var.get()}"
                         self.visualization_generator.generate_table5(self.data, filepath)
                     else:
                         raise Exception("No recommendations data")

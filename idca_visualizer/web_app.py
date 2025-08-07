@@ -144,7 +144,7 @@ def export_csv():
             mitre_writer = csv.writer(mitre_csv)
             mitre_writer.writerow(['Tactic Name', 'Test Count', 'Triggered Count', 'Success Rate'])
             
-            for tactic in current_data.mitre_tactics:
+            for tactic in current_data.mitre_tactics.values():
                 mitre_writer.writerow([
                     tactic.name,
                     tactic.test_count,
@@ -161,9 +161,9 @@ def export_csv():
             
             for rule in current_data.triggered_rules:
                 rules_writer.writerow([
-                    rule.mitre_id,
-                    rule.rule_name,
-                    rule.severity
+                    getattr(rule, 'mitre_id', ''),
+                    getattr(rule, 'name', getattr(rule, 'rule_name', '')),
+                    getattr(rule, 'severity', 'Medium')
                 ])
             
             zf.writestr('triggered_rules.csv', rules_csv.getvalue())
@@ -175,9 +175,9 @@ def export_csv():
             
             for technique in current_data.undetected_techniques:
                 undetected_writer.writerow([
-                    technique.mitre_id,
-                    technique.technique_name,
-                    technique.description
+                    getattr(technique, 'mitre_id', ''),
+                    getattr(technique, 'name', getattr(technique, 'technique_name', '')),
+                    getattr(technique, 'description', '')
                 ])
             
             zf.writestr('undetected_techniques.csv', undetected_csv.getvalue())

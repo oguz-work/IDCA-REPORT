@@ -708,53 +708,42 @@ class VisualizationGenerator:
         """Create MITRE ATT&CK heatmap and return figure"""
         fig, ax = self._setup_figure(figsize=(12, 8))
         
-        # Get MITRE data
-        mitre_data = []
-        for tactic in data.mitre_tactics:
-            mitre_data.append({
-                'name': tactic.name,
-                'tested': tactic.tested_techniques,
-                'total': tactic.total_techniques
-            })
-        
-        if not mitre_data:
+        # Build list from tactics
+        mitre_values = list(data.mitre_tactics.values())
+        if not mitre_values:
             ax.text(0.5, 0.5, 'No MITRE data available', 
                    transform=ax.transAxes, ha='center', va='center',
                    fontsize=16, color=self.theme_manager.get_color('text_primary'))
             ax.axis('off')
             return fig
         
-        # Create heatmap data
-        tactics = [d['name'] for d in mitre_data]
-        coverage = [d['tested'] / d['total'] * 100 if d['total'] > 0 else 0 
-                   for d in mitre_data]
+        tactics = [t.name for t in mitre_values]
+        coverage = [t.success_rate for t in mitre_values]
         
-        # Create bar chart as heatmap
+        # Create horizontal bars
         y_pos = np.arange(len(tactics))
         bars = ax.barh(y_pos, coverage, color=self.theme_manager.get_color('primary'))
         
-        # Color bars based on coverage
-        for i, (bar, cov) in enumerate(zip(bars, coverage)):
-            if cov >= 80:
+        # Color bars based on success rate
+        for bar, cov in zip(bars, coverage):
+            if cov >= 70:
                 bar.set_color(self.theme_manager.get_color('success'))
-            elif cov >= 50:
+            elif cov >= 40:
                 bar.set_color(self.theme_manager.get_color('warning'))
             else:
-                bar.set_color(self.theme_manager.get_color('error'))
+                bar.set_color(self.theme_manager.get_color('danger'))
         
         # Customize
         ax.set_yticks(y_pos)
         ax.set_yticklabels(tactics)
-        ax.set_xlabel('Coverage %', fontsize=12)
-        ax.set_title('MITRE ATT&CK Coverage by Tactic', fontsize=16, pad=20)
+        ax.set_xlabel('Success Rate (%)', fontsize=12)
+        ax.set_title('MITRE ATT&CK Tactics Success', fontsize=16, pad=20)
         ax.set_xlim(0, 100)
         
-        # Add percentage labels
-        for i, (bar, cov) in enumerate(zip(bars, coverage)):
+        for bar, cov in zip(bars, coverage):
             ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2, 
                    f'{cov:.1f}%', va='center')
         
-        # Apply theme colors
         ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
         ax.xaxis.label.set_color(self.theme_manager.get_color('text_primary'))
         ax.title.set_color(self.theme_manager.get_color('text_primary'))
@@ -766,34 +755,30 @@ class VisualizationGenerator:
         """Create severity distribution chart and return figure"""
         fig, ax = self._setup_figure()
         
-        # Count findings by severity
+        # Count triggered rules by severity (fallback to Medium if missing)
         severity_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+        for rule in data.triggered_rules:
+            sev = getattr(rule, 'severity', 'Medium') or 'Medium'
+            if sev not in severity_counts:
+                sev = 'Medium'
+            severity_counts[sev] += 1
         
-        for finding in data.findings:
-            if finding.severity in severity_counts:
-                severity_counts[finding.severity] += 1
-        
-        # Create bar chart
         severities = list(severity_counts.keys())
         counts = list(severity_counts.values())
-        colors = [self.theme_manager.get_color('error'),
+        colors = [self.theme_manager.get_color('danger'),
                  self.theme_manager.get_color('warning'),
                  self.theme_manager.get_color('info'),
                  self.theme_manager.get_color('success')]
         
         bars = ax.bar(severities, counts, color=colors)
-        
-        # Add value labels
         for bar in bars:
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
                    f'{int(height)}', ha='center', va='bottom')
         
-        # Customize
-        ax.set_ylabel('Number of Findings', fontsize=12)
-        ax.set_title('Findings by Severity', fontsize=16, pad=20)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('Triggered Rules by Severity', fontsize=16, pad=20)
         
-        # Apply theme colors
         ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
         ax.yaxis.label.set_color(self.theme_manager.get_color('text_primary'))
         ax.title.set_color(self.theme_manager.get_color('text_primary'))
@@ -804,49 +789,40 @@ class VisualizationGenerator:
         """Create top security gaps chart and return figure"""
         fig, ax = self._setup_figure(figsize=(10, 6))
         
-        # Get failed tests
-        failed_tests = [test for test in data.test_results.tests 
-                       if test.status in ['Failed', 'Not Tested']]
-        
-        # Sort by severity (assuming we have severity info)
-        # For now, just take top 10
-        top_gaps = failed_tests[:10]
-        
-        if not top_gaps:
+        # Use undetected techniques as gaps; sort by criticality
+        if not data.undetected_techniques:
             ax.text(0.5, 0.5, 'No security gaps identified', 
                    transform=ax.transAxes, ha='center', va='center',
                    fontsize=16, color=self.theme_manager.get_color('text_primary'))
             ax.axis('off')
             return fig
         
-        # Create horizontal bar chart
-        test_names = [test.test_id[:50] + '...' if len(test.test_id) > 50 
-                     else test.test_id for test in top_gaps]
-        y_pos = np.arange(len(test_names))
+        crit_rank = {'Critical': 3, 'High': 2, 'Medium': 1, 'Low': 0, 'Kritik': 3, 'Yüksek': 2, 'Orta': 1, 'Düşük': 0}
+        sorted_gaps = sorted(list(data.undetected_techniques), key=lambda t: crit_rank.get(t.criticality, 0), reverse=True)[:10]
         
-        # Use status to determine color
-        colors = [self.theme_manager.get_color('error') if test.status == 'Failed'
-                 else self.theme_manager.get_color('warning') 
-                 for test in top_gaps]
+        names = [f"{t.mitre_id} - {t.name[:40]}" + ("..." if len(t.name) > 40 else "") for t in sorted_gaps]
+        y_pos = np.arange(len(names))
+        colors = []
+        for t in sorted_gaps:
+            if t.criticality in ['Critical', 'Kritik']:
+                colors.append(self.theme_manager.get_color('danger'))
+            elif t.criticality in ['High', 'Yüksek']:
+                colors.append(self.theme_manager.get_color('warning'))
+            else:
+                colors.append(self.theme_manager.get_color('info'))
         
-        ax.barh(y_pos, [1] * len(test_names), color=colors)
-        
-        # Customize
+        ax.barh(y_pos, [1]*len(names), color=colors)
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(test_names, fontsize=10)
-        ax.set_xlabel('Status', fontsize=12)
-        ax.set_title('Top Security Gaps', fontsize=16, pad=20)
+        ax.set_yticklabels(names, fontsize=9)
+        ax.set_xlabel('Priority', fontsize=12)
+        ax.set_title('Top Detection Gaps (Undetected Techniques)', fontsize=16, pad=20)
         ax.set_xlim(0, 1.2)
-        
-        # Remove x-axis ticks
         ax.set_xticks([])
         
-        # Add status labels
-        for i, test in enumerate(top_gaps):
-            ax.text(1.05, i, test.status, va='center', fontsize=10,
+        for i, t in enumerate(sorted_gaps):
+            ax.text(1.05, i, t.criticality, va='center', fontsize=10,
                    color=self.theme_manager.get_color('text_secondary'))
         
-        # Apply theme colors
         ax.tick_params(colors=self.theme_manager.get_color('text_primary'))
         ax.xaxis.label.set_color(self.theme_manager.get_color('text_primary'))
         ax.title.set_color(self.theme_manager.get_color('text_primary'))
@@ -857,7 +833,7 @@ class VisualizationGenerator:
     def create_summary_dashboard(self, data: IDCAData) -> plt.Figure:
         """Create summary dashboard and return figure"""
         fig = plt.figure(figsize=(12, 8))
-        fig.patch.set_facecolor(self.theme_manager.get_color('background'))
+        fig.patch.set_facecolor(self.theme_manager.get_color('background') if not self.transparent else 'none')
         
         # Create grid
         gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
@@ -868,16 +844,16 @@ class VisualizationGenerator:
         
         # Calculate metrics
         total_tests = data.test_results.total_rules
-        passed_tests = data.test_results.passed_rules
-        coverage_pct = (passed_tests / total_tests * 100) if total_tests > 0 else 0
-        critical_findings = len([f for f in data.findings if f.severity == 'Critical'])
-        high_findings = len([f for f in data.findings if f.severity == 'High'])
+        passed_tests = data.test_results.triggered_rules
+        coverage_pct = (data.test_results.coverage_rate)
+        critical_findings = sum(1 for f in data.undetected_techniques if f.criticality in ['Critical', 'Kritik'])
+        high_findings = sum(1 for f in data.undetected_techniques if f.criticality in ['High', 'Yüksek'])
         
         # Display metrics
         metrics_text = f"""
-        Test Coverage: {coverage_pct:.1f}%    |    Total Tests: {total_tests}    |    
-        Passed: {passed_tests}    |    Critical Findings: {critical_findings}    |    
-        High Findings: {high_findings}
+        Test Coverage: {coverage_pct:.1f}%    |    Total Rules: {total_tests}    |    
+        Triggered: {passed_tests}    |    Critical Gaps: {critical_findings}    |    
+        High Gaps: {high_findings}
         """
         ax1.text(0.5, 0.5, metrics_text, transform=ax1.transAxes,
                 ha='center', va='center', fontsize=14,
@@ -888,49 +864,48 @@ class VisualizationGenerator:
         # Test coverage pie
         ax2 = fig.add_subplot(gs[1, 0])
         if total_tests > 0:
-            sizes = [passed_tests, total_tests - passed_tests]
+            tested = data.test_results.tested_rules
+            not_tested = total_tests - tested
             colors = [self.theme_manager.get_color('success'), 
                      self.theme_manager.get_color('error')]
-            ax2.pie(sizes, labels=['Passed', 'Failed'], colors=colors,
+            ax2.pie([tested, not_tested], labels=['Tested', 'Not Tested'], colors=colors,
                    autopct='%1.1f%%', startangle=90)
-            ax2.set_title('Test Results', fontsize=12)
+            ax2.set_title('Test Coverage', fontsize=12)
         else:
             ax2.text(0.5, 0.5, 'No data', transform=ax2.transAxes,
                     ha='center', va='center')
             ax2.axis('off')
         
-        # Severity distribution
+        # Severity distribution of triggered rules
         ax3 = fig.add_subplot(gs[1, 1])
-        severity_counts = {'Critical': critical_findings, 
-                          'High': high_findings,
-                          'Medium': len([f for f in data.findings if f.severity == 'Medium']),
-                          'Low': len([f for f in data.findings if f.severity == 'Low'])}
-        
+        severity_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+        for r in data.triggered_rules:
+            sev = getattr(r, 'severity', 'Medium') or 'Medium'
+            if sev not in severity_counts:
+                sev = 'Medium'
+            severity_counts[sev] += 1
         if sum(severity_counts.values()) > 0:
             ax3.bar(severity_counts.keys(), severity_counts.values(),
-                   color=[self.theme_manager.get_color('error'),
+                   color=[self.theme_manager.get_color('danger'),
                          self.theme_manager.get_color('warning'),
                          self.theme_manager.get_color('info'),
                          self.theme_manager.get_color('success')])
-            ax3.set_title('Findings by Severity', fontsize=12)
+            ax3.set_title('Triggered Rules by Severity', fontsize=12)
             ax3.set_ylabel('Count')
         else:
-            ax3.text(0.5, 0.5, 'No findings', transform=ax3.transAxes,
+            ax3.text(0.5, 0.5, 'No triggered rules', transform=ax3.transAxes,
                     ha='center', va='center')
             ax3.axis('off')
         
-        # MITRE coverage summary
+        # MITRE coverage summary (top 5 by lowest success)
         ax4 = fig.add_subplot(gs[1:, 2])
         if data.mitre_tactics:
-            tactics = [t.name[:15] + '...' if len(t.name) > 15 else t.name 
-                      for t in data.mitre_tactics[:5]]
-            coverage = [t.tested_techniques / t.total_techniques * 100 
-                       if t.total_techniques > 0 else 0 
-                       for t in data.mitre_tactics[:5]]
-            
+            items = sorted(list(data.mitre_tactics.items()), key=lambda x: x[1].success_rate)[:5]
+            tactics = [name[:15] + '...' if len(name) > 15 else name for name, _ in items]
+            coverage = [t.success_rate for _, t in items]
             ax4.barh(tactics, coverage)
-            ax4.set_xlabel('Coverage %')
-            ax4.set_title('Top MITRE Tactics', fontsize=12)
+            ax4.set_xlabel('Success %')
+            ax4.set_title('Lowest Performing Tactics', fontsize=12)
             ax4.set_xlim(0, 100)
         else:
             ax4.text(0.5, 0.5, 'No MITRE data', transform=ax4.transAxes,

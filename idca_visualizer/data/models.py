@@ -153,6 +153,7 @@ class TriggeredRule:
     mitre_id: str
     tactic: str
     confidence: int
+    severity: str = 'Medium'
     
     def validate(self) -> List[str]:
         """Validate rule data"""
@@ -182,6 +183,7 @@ class UndetectedTechnique:
     name: str
     tactic: str
     criticality: str
+    description: str = ""
     
     def validate(self) -> List[str]:
         """Validate technique data"""
@@ -345,3 +347,40 @@ class IDCAData:
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return cls.from_dict(data)
+    
+    # Convenience helpers used by the web app layer
+    def add_mitre_tactic(self, name: str, test_count: int, triggered_count: int):
+        """Add or update a MITRE tactic entry"""
+        tactic = self.mitre_tactics.get(name) or MitreTactic(name=name)
+        tactic.test_count = test_count
+        tactic.triggered_count = triggered_count
+        tactic.calculate_success_rate()
+        self.mitre_tactics[name] = tactic
+    
+    def add_triggered_rule(self, mitre_id: str, rule_name: str, severity: str = 'Medium'):
+        """Append a triggered rule (web app convenience)"""
+        self.triggered_rules.append(TriggeredRule(
+            name=rule_name,
+            mitre_id=mitre_id,
+            tactic="",
+            confidence=0,
+            severity=severity
+        ))
+    
+    def add_undetected_technique(self, mitre_id: str, technique_name: str, description: str = ""):
+        """Append an undetected technique (web app convenience)"""
+        self.undetected_techniques.append(UndetectedTechnique(
+            mitre_id=mitre_id,
+            name=technique_name,
+            tactic="",
+            criticality='Medium',
+            description=description
+        ))
+    
+    def add_recommendation(self, priority: str, description: str):
+        """Append a recommendation (web app convenience)"""
+        self.recommendations.append(Recommendation(
+            priority=priority,
+            category="",
+            text=description
+        ))
